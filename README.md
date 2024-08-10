@@ -61,6 +61,8 @@
 <br/><br/> 
 
  ## 상세기능2(유량예측모델)
+ - ![image](https://github.com/user-attachments/assets/c5224cf4-7bad-465f-9425-5e83e537a7eb)
+   - "수난구조 현장활동 지침"에 의하면 일반 잠수가 가능한 유속은 0.51m/s이하이고 0.77m/s 초과 유속은 모든 잠수 금지를 적시함을 근거로 삼는다
 
  - ![image](https://github.com/user-attachments/assets/3efe6269-2c9d-4879-af5e-0e14bc29e3c6)
     - 용추계곡 중심으로 진행(사고다발지역)
@@ -68,9 +70,99 @@
     - 가평교 기준 2017-2022자료 수집 --> 용추계곡에서 가장 가까운 수위 측정 위
     - 자료 전처리
 
+- ![image](https://github.com/user-attachments/assets/300d42b6-62a7-45e4-91fd-52497da03119)
+    - 기상청 API허브 강수량 자료 이용 --> 관련정보만 전처리
+    - 가평교 수위, 유량자료와 기상청의 해당구역 강수량 자료 통합 및 전처리
 
+ - ![image](https://github.com/user-attachments/assets/f3049c46-0072-4bf2-9905-d043898324f6)
+    - 수위, 유량, 강수량은 유사하게 변화함을 알 수 있음
+    - 6-9월의 변화가 뚜렷한 것으로 확
 
+  - ![image](https://github.com/user-attachments/assets/4ff3ff8c-54e4-4032-9092-14374240f2c1)
+    - 강수량이 많을 수록 수위가 올라가는 선형적인 구조를 이용하여 강수량이 상승했을때, 유속측정기를 활용하여 유속이 증가했을때 종합하여 위험도 표시
  
-       
+<br/><br/> 
+
+  ## 상세기능3(iot)
+  ### 라즈베리파이 카메라
+  > 모델 2가지를 만들었으니 라즈베리 파이에 넣고 출력물이 클라우드로 이동하는 과정이 필요하다
+
+ ![image](https://github.com/user-attachments/assets/6439a5dd-73c9-41e0-88d6-89fd9db2c06c)
+
+ - 2초간격으로 CCTV 화면저장 --> "live_img"파일로 이동
+ - 익사 위험을 의미하는 cls0(익수인식 box) 인식시 저장 --> "detect_img"로 이동
+ - 4개의 라벨중 하나라도 인식시 데이터 저장 --> "detect_json"(라벨이 인식하는 수가 사람수기 때문에 사람수를 그래프로 나타내는 서비스를 하기위해선 json형태의 파일이 필요하다)
+ - 1분간격으로 수심, 유속 측정 및 강수량 값 저장 --> "waterflow_json"로 이동
+    - 유속센서에서 받는 값들(1초마다 한번씩 값이 들어오고 60개를 평균내서 json으로 묶는다)
+    - 실기간 강수량은 기상청 API에서 받아오는걸로 한다
+    - 둘의 값을 json으로 묶어서 1분간격으로 cloud로 보낸다
+
+   <br/><br/> 
+  ## CLOUD
+  ### 버켓에 라즈베리파이에서 받은 파일들 적재
+  - observer가 폴더내의 파일생성 이벤트를 감시한다
+  - 파일 생성 이벤트 발견시 파일명 끝자리(_l.img,_0.img,_d.json,_s.json) 로 업로드할 버켓 이름을 결정한다. 
+ - ![image](https://github.com/user-attachments/assets/cac9125c-ff9a-4a11-a0bf-8f61e349b967)
+
+  ### lambda함수를 사용하여 버켓에 있는 내용을 DB에 적재한다. 
+      - swim table : detect_json파일(사람수 인식하기 위함, 익수자 파악하기 위함)
+      - date, detecting, accuracy
+
+''' 
+      const AWS = require('aws-sdk');
+const mysql = require('mysql2/promise');
+
+exports.handler = async (event, context) => {
+  const bucketName = 'team7-data';
+
+  const dbHost = 'database-1.clhnj2zwdisk.eu-west-2.rds.amazonaws.com'; //프라이빗 ip 172.31.0.0
+  const dbUser = 'admin';
+  const dbPassword = '12345678';
+  const dbName = 'team7_database';
+
+  const s3 = new AWS.S3();
+
+  const dbConfig = {
+    host: dbHost,
+    user: dbUser,
+    password: dbPassword,
+    database: dbName
+  };
+
+  try {
+    const dbConn = await mysql.createConnection(dbConfig);
+
+    for (const record of event.Records) {
+      if (record.eventName === 'ObjectCreated:Put') {
+        try {
+          const imageKey = record.s3.object.key;
+
+          const objectParams = { Bucket: bucketName, Key: imageKey };
+          const objectData = await s3.getObject(objectParams).promise();
+
+          const objectContent = objectData.Body.toString('utf-8');
+          const jsonArray = JSON.parse(objectContent);
+
+          for (const json of jsonArray) {
+            const insertQuery = `INSERT INTO swim (date, detecting, accuracy) VALUES (?, ?, ?)`;
+            const values = [json.date, json.detecting, json.accuracy];
+
+            await dbConn.execute(insertQuery, values);
+          }
+
+          console.log('Object data has been inserted into MariaDB.');
+        } catch (error) {
+          console.error('Failed to process S3 object:', error);
+        }
+      }
+    }
+
+    await dbConn.end();
+  } catch (error) {
+    console.error('Failed to connect to RDS(MariaDB):', error);
+  }
+};
+'''
+  
 
  
