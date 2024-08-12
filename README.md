@@ -73,6 +73,7 @@
 - ![image](https://github.com/user-attachments/assets/300d42b6-62a7-45e4-91fd-52497da03119)
     - 기상청 API허브 강수량 자료 이용 --> 관련정보만 전처리
     - 가평교 수위, 유량자료와 기상청의 해당구역 강수량 자료 통합 및 전처리
+  
 
  - ![image](https://github.com/user-attachments/assets/f3049c46-0072-4bf2-9905-d043898324f6)
     - 수위, 유량, 강수량은 유사하게 변화함을 알 수 있음
@@ -80,7 +81,103 @@
 
   - ![image](https://github.com/user-attachments/assets/4ff3ff8c-54e4-4032-9092-14374240f2c1)
     - 강수량이 많을 수록 수위가 올라가는 선형적인 구조를 이용하여 강수량이 상승했을때, 유속측정기를 활용하여 유속이 증가했을때 종합하여 위험도 표시
- 
+    - 수위(가평교 수위 데이터), 강수량(가평교 주변 기상청) 학습데이터
+    - 유량(가평교 유량 데이터) 결과값으로 모델 생성
+
+<br/>
+
+```
+def load_model(filepath):
+    with open(filepath, 'rb') as f:
+        model = pickle.load(f)
+    return model
+
+def predict_flow(rainfall, water_level, velocity):
+    # 입력 데이터를 특징 벡터로 변환
+    features = np.array([[rainfall, water_level, velocity]])
+
+    # 모델 로드
+    model = load_model('gradient_boosting_model.pkl')
+
+    # 유량 예측
+    flow = model.predict(features)
+
+    return flow
+
+def check_risk_level(rainfall, water_level, velocity):
+    # 기준 수위
+    threshold_level = 1.1
+
+    # 유량 예측
+    flow = predict_flow(rainfall, water_level, velocity)
+
+    # 강수량에 따른 위험도 계산
+    if rainfall >= 10:
+        rainfall_risk = 5
+    else:
+        rainfall_risk = 1
+
+    # 수위에 따른 위험도 계산
+    if threshold_level + water_level >= 1.3:
+        water_level_risk = 5
+    else:
+        water_level_risk = 1
+
+    # 유속에 따른 위험도 계산
+    if velocity <= 0.1:
+        velocity_risk = 1
+    elif velocity <= 0.3:
+        velocity_risk = 2
+    elif velocity <= 0.5:
+        velocity_risk = 3
+    elif velocity <= 0.7:
+        velocity_risk = 4
+    else:
+        velocity_risk = 5
+
+    # 종합 위험도 계산
+    total_risk = 0
+
+    if rainfall_risk >= 4 or water_level_risk >= 4 or velocity_risk >= 4:
+        total_risk = 5
+    elif rainfall_risk >= 3 or water_level_risk >= 3 or velocity_risk >= 3:
+        total_risk = 4
+    elif rainfall_risk >= 2 or water_level_risk >= 2 or velocity_risk >= 2:
+        total_risk = 3
+    elif rainfall_risk >= 1 or water_level_risk >= 1 or velocity_risk >= 1:
+        total_risk = 2
+    else:
+        total_risk = 1
+
+    # 위험도를 텍스트로 표시
+    if total_risk == 1:
+        risk_level = '0'
+    elif total_risk == 2:
+        risk_level = '1'
+    elif total_risk == 3:
+        risk_level = '2'
+    elif total_risk == 4:
+        risk_level = '3'
+    else:
+        risk_level = '4'
+
+    return flow, risk_level
+
+# 강수량, 수위, 유속 입력 받기
+rainfall = float(input("강수량을 입력하세요: "))
+water_level = float(input("수위를 입력하세요: "))
+velocity = float(input("유속을 입력하세요: "))
+
+# 유량 예측 및 위험단계 확인
+predicted_flow, risk_level = check_risk_level(rainfall, water_level, velocity)
+
+print("Predicted Flow:", predicted_flow)
+print("Risk Level:", risk_level)
+```
+
+- 강수량, 수위, 유속을 입력받아 유량을 예측하고, 그에 따른 위험도를 평가하는 프로그램
+- 수위와 유속은 라즈베리파이에서 가져오는 데이터를 이용한다.
+    
 <br/><br/> 
 
   ## 상세기능3(iot)
@@ -236,12 +333,14 @@ exports.handler = async (event, context) => {
  <br/><br/>
 
   ## 설치지역 타당성(GIS 지형분석)
-    - CCTV설치의 타당성을 높이기 위함
-    - 지리정보가 포함된 데이터와, 정확한 구역별 경계를 나타내는 데이터를 가지고
-    - 지형적인 요인을 분석
-    - 가평 용추계곡을 예시로 진행
+- CCTV설치의 타당성을 높이기 위함
+- 지리정보가 포함된 데이터와, 정확한 구역별 경계를 나타내는 데이터를 가지고
+- 지형적인 요인을 분석
+- 가평 용추계곡을 예시로 진행
+
   <br/>
-  >  범위를 지정해주기 위해, 용추계곡이 있는 승안리를 선택, 하천의 실제 폭을 덧씌움
+  
+>  범위를 지정해주기 위해, 용추계곡이 있는 승안리를 선택, 하천의 실제 폭을 덧씌움
 
    ![image](https://github.com/user-attachments/assets/096e1aed-6b64-43ca-ac87-f7ecf0a51fd4)
 
@@ -257,39 +356,56 @@ exports.handler = async (event, context) => {
 
 <br/> <br/>
 
+### 분석 결과
 
-  ### 분석 결과
-
-     >  사고 다발지역
+>  사고 다발지역
      
-     ![image](https://github.com/user-attachments/assets/4e67f80f-5846-495a-9d2f-ec4623f251b1)
+  ![image](https://github.com/user-attachments/assets/4e67f80f-5846-495a-9d2f-ec4623f251b1)
 
-    - 물놀이 구간 시작과 끝 고도차이가 30-50정도로 난다
-    - 고도차이가 난다면 강우발생시 유속이 빨라질 위험 + 유량이 급격히 늘어날 가능성 있음
+- 물놀이 구간 시작과 끝 고도차이가 30-50정도로 난다
+- 고도차이가 난다면 강우발생시 유속이 빨라질 위험 + 유량이 급격히 늘어날 가능성 있음
 
-    ![image](https://github.com/user-attachments/assets/db81fa22-07a5-457c-b11c-1aae2afbbe3e)
+  ![image](https://github.com/user-attachments/assets/db81fa22-07a5-457c-b11c-1aae2afbbe3e)
 
-     - 초록 점선 : 경사도 (경사도가 0인 부분이 물놀이 구간)
-     - 노란 점선 : 깊이
-     - 물놀이 구간 전에 경사도가 급한 지역이 있다
-     - -> 이는 물의 흐름이 빨라질 수 있고 물놀이 구간에 빠른 유속으로 물이 접근할 수 있다
+ - 초록 점선 : 경사도 (경사도가 0인 부분이 물놀이 구간)
+ - 노란 점선 : 깊이
+ - 물놀이 구간 전에 경사도가 급한 지역이 있다
+ - -> 이는 물의 흐름이 빨라질 수 있고 물놀이 구간에 빠른 유속으로 물이 접근할 수 있다
 
 
-     ![image](https://github.com/user-attachments/assets/040ce548-27cd-45f0-9981-ae1129aac25e)
+  ![image](https://github.com/user-attachments/assets/040ce548-27cd-45f0-9981-ae1129aac25e)
      - 물놀이 구간(초록 점선0)에 깊이(노란선)이 깊은 구간이 있다
 
 
-      <br/>
+  <br/>
 
-      > 사고적은 지역
+> 사고적은 지역
 
-      ![image](https://github.com/user-attachments/assets/33743f1d-2803-4421-b280-d5c1cc96106c)
+  ![image](https://github.com/user-attachments/assets/33743f1d-2803-4421-b280-d5c1cc96106c)
        
-       - 사고가 적은 지역은 비교적 고도의 차이가 많이 나지않고 그래프가 일직선에 가깝다
+  - 사고가 적은 지역은 비교적 고도의 차이가 많이 나지않고 그래프가 일직선에 가깝다
        
-      ![image](https://github.com/user-attachments/assets/2bc277cc-90b5-4756-a3b2-c37c466f7b8a)
+  ![image](https://github.com/user-attachments/assets/2bc277cc-90b5-4756-a3b2-c37c466f7b8a)
 
-      - 물놀이 구간 전에 경사가 심한 구간이 보인다 --> 하지만 깊이가 대부분 1M이하이다
-      
+  - 물놀이 구간 전에 경사가 심한 구간이 보인다 --> 하지만 깊이가 대부분 1M이하이다
+
+
+### 향후계획
+
+
+-AI
+   - 모델 검출률 향상
+- Iot
+   - 검출률 향상을 위한 유량센서 강화, 수위 측정
+- cloud
+   - 람다함수 구현 : s3 일정 수준의 저장공간에 도달하면 자동으로 처음부터 정리해주는 람다함수 구현
+   -  클라우드 환경 확대 : github action 과 AWS Amplify를 이용한 CI/CD 파이프라인 구성
+- bigdata
+   - 유량예측 모델 검출률 향상
+   - 가평교를 중심으로 진행하였기에 댐의 영향으로 강수량에는 큰 영향을 받지 않는점이 아쉬움
+   - 자연환경에서 유속과, 유량을 예측하기는 매우 복잡한 계산. 전문지식이 필요했다
+   - 다른계곡의 지형분속을 통해 CCTV설치 지역을 명확히 할 필요가 있음
+
+
 
       
