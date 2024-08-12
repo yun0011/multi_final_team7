@@ -108,7 +108,7 @@
       - swim table : detect_json파일(사람수 인식하기 위함, 익수자 파악하기 위함)
       - date, detecting, accuracy
 
-''' 
+```
       const AWS = require('aws-sdk');
 const mysql = require('mysql2/promise');
 
@@ -162,7 +162,134 @@ exports.handler = async (event, context) => {
     console.error('Failed to connect to RDS(MariaDB):', error);
   }
 };
-'''
+```
   
+   - water_flow table : 유속, 유량, 강수량 데이터, 이를 바탕으로 한 경고 json 파일
+   - (date, rain, deep, ws, wf, warn)
+   - rain : 강수량, deep : 수심, ws : 유속, wf : 유량, warn : 경고고
 
- 
+
+ ```
+const AWS = require('aws-sdk');
+const mysql = require('mysql2/promise'); // mysql2/promise 모듈을 사용하여 비동기적으로 연결
+
+exports.handler = async (event, context) => {
+  // AWS S3 및 RDS(MariaDB) 설정
+  const bucketName = 'team7-water';
+
+  const dbHost = 'database-1.clhnj2zwdisk.eu-west-2.rds.amazonaws.com';
+  const dbUser = 'admin';
+  const dbPassword = '12345678';
+  const dbName = 'team7_database';
+
+  // AWS S3 및 RDS(MariaDB) 클라이언트 생성
+  const s3 = new AWS.S3();
+
+  // RDS(MariaDB) 연결 설정
+  const dbConfig = {
+    host: dbHost,
+    user: dbUser,
+    password: dbPassword,
+    database: dbName
+  };
+
+  try {
+    // RDS(MariaDB) 연결 생성
+    const dbConn = await mysql.createConnection(dbConfig);
+
+    // S3 이벤트 레코드를 반복하여 처리
+    for (const record of event.Records) {
+      // 이벤트 유형 확인 (ObjectCreated)
+      if (record.eventName === 'ObjectCreated:Put') {
+        try {
+          // 업로드된 객체의 키 가져오기
+          const imageKey = record.s3.object.key;
+
+          // S3에서 객체 가져오기
+          const objectParams = { Bucket: bucketName, Key: imageKey };
+          const objectData = await s3.getObject(objectParams).promise();
+
+          // 객체 데이터 처리 로직 추가
+          // 예: MariaDB에 데이터 저장
+          const objectContent = objectData.Body.toString('utf-8');
+          const insertQuery = INSERT INTO water_flow (date, rain, deep, ws, wf, warn) VALUES (?, ?, ?, ?, ?, ?);
+          const parsedData = JSON.parse(objectContent);
+          const values = [parsedData.date, parsedData.rain, parsedData.deep, parsedData.ws, parsedData.wf, parsedData.warn];
+
+          // 데이터 삽입을 위해 RDS(MariaDB) 연결 사용
+          await dbConn.execute(insertQuery, values);
+
+          console.log('Object data has been inserted into MariaDB.'); // 로그 추가
+        } catch (error) {
+          console.error('Failed to process S3 object:', error);
+        }
+      }
+    }
+
+    await dbConn.end(); // 연결 종료
+  } catch (error) {
+    console.error('Failed to connect to RDS(MariaDB):', error);
+  }
+};
+
+```
+ <br/><br/>
+
+  ## 설치지역 타당성(GIS 지형분석)
+    - CCTV설치의 타당성을 높이기 위함
+    - 지리정보가 포함된 데이터와, 정확한 구역별 경계를 나타내는 데이터를 가지고
+    - 지형적인 요인을 분석
+    - 가평 용추계곡을 예시로 진행
+  <br/>
+  >  범위를 지정해주기 위해, 용추계곡이 있는 승안리를 선택, 하천의 실제 폭을 덧씌움
+
+   ![image](https://github.com/user-attachments/assets/096e1aed-6b64-43ca-ac87-f7ecf0a51fd4)
+
+  <br/>
+
+  > QGIS의 Profile Tool을 사용, 물놀이 구간의 상류부터 하류까지 고도변화를 분석
+  > 구글어스의 고도수치와 비교하며 정확한 값을 얻음
+  > 추가적으로 경사도와 깊이 분석 진행
+
+  ![image](https://github.com/user-attachments/assets/3d0af1bd-1892-40d1-921a-d144c499fb30)
+
+  > 같은 방식으로 물놀이 사고 발생률이 높은 10개의 계곡과 낮은 10개의 계곡을 지정해 고도, 깊이, 경사도 변화를 구역별 수치값으로 추출하여 분석을 진행
+
+<br/> <br/>
+
+
+  ### 분석 결과
+
+     >  사고 다발지역
+     
+     ![image](https://github.com/user-attachments/assets/4e67f80f-5846-495a-9d2f-ec4623f251b1)
+
+    - 물놀이 구간 시작과 끝 고도차이가 30-50정도로 난다
+    - 고도차이가 난다면 강우발생시 유속이 빨라질 위험 + 유량이 급격히 늘어날 가능성 있음
+
+    ![image](https://github.com/user-attachments/assets/db81fa22-07a5-457c-b11c-1aae2afbbe3e)
+
+     - 초록 점선 : 경사도 (경사도가 0인 부분이 물놀이 구간)
+     - 노란 점선 : 깊이
+     - 물놀이 구간 전에 경사도가 급한 지역이 있다
+     - -> 이는 물의 흐름이 빨라질 수 있고 물놀이 구간에 빠른 유속으로 물이 접근할 수 있다
+
+
+     ![image](https://github.com/user-attachments/assets/040ce548-27cd-45f0-9981-ae1129aac25e)
+     - 물놀이 구간(초록 점선0)에 깊이(노란선)이 깊은 구간이 있다
+
+
+      <br/>
+
+      > 사고적은 지역
+
+      ![image](https://github.com/user-attachments/assets/33743f1d-2803-4421-b280-d5c1cc96106c)
+       
+       - 사고가 적은 지역은 비교적 고도의 차이가 많이 나지않고 그래프가 일직선에 가깝다
+       
+      ![image](https://github.com/user-attachments/assets/2bc277cc-90b5-4756-a3b2-c37c466f7b8a)
+
+      - 물놀이 구간 전에 경사가 심한 구간이 보인다 --> 하지만 깊이가 대부분 1M이하이다
+      
+
+      
