@@ -1,6 +1,8 @@
 # multi_final_team7
 멀티캠퍼스 융합프로젝트_익수예방CCTV
 
+# #AWS lambda, AWS S3, maria DB, react, yolov5, QGIS
+
 ## 프로젝트 목적
 - CCTV + AI --> 안전사고 예방
 - 이미 많이 진행되고 있는 분야지만 익수에 관한 CCTV는 부족한 상황
